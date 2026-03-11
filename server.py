@@ -21,19 +21,19 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/health":
             self._send_json(200, {"status": "ok"})
             return
-        self._send_json(404, {"error": "Not found"})
+        self._send_json(404, {"status": "fail", "error": "Not found"})
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlsplit(self.path)
         if parsed.path != "/amo/salesbot/message":
-            self._send_json(404, {"error": "Not found"})
+            self._send_json(404, {"status": "fail", "error": "Not found"})
             return
 
         settings = Settings.from_env()
         query = parse_qs(parsed.query)
         api_key = self.headers.get("X-Api-Key", "") or query.get("api_key", [""])[0]
         if api_key != settings.app_api_key:
-            self._send_json(401, {"error": "Invalid API key"})
+            self._send_json(401, {"status": "fail", "error": "Invalid API key"})
             return
 
         try:
@@ -44,16 +44,16 @@ class Handler(BaseHTTPRequestHandler):
             chat_id, message = validate_payload(payload)
             post_id = post_to_mattermost(settings, chat_id, message)
         except ValueError as exc:
-            self._send_json(400, {"error": str(exc)})
+            self._send_json(400, {"status": "fail", "error": str(exc)})
             return
         except json.JSONDecodeError:
-            self._send_json(400, {"error": "Body must be valid JSON"})
+            self._send_json(400, {"status": "fail", "error": "Body must be valid JSON"})
             return
         except Exception as exc:  # noqa: BLE001
-            self._send_json(502, {"error": f"Mattermost delivery failed: {exc}"})
+            self._send_json(502, {"status": "fail", "error": f"Mattermost delivery failed: {exc}"})
             return
 
-        self._send_json(200, {"status": "ok", "post_id": post_id})
+        self._send_json(200, {"status": "success", "post_id": post_id})
 
     def _parse_payload(self, raw_body: bytes, content_type: str, query: dict[str, list[str]]) -> dict[str, str]:
         if "application/json" in content_type:
