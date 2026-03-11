@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -30,6 +31,13 @@ def validate_payload(payload: dict) -> tuple[str, str]:
     message = str(payload.get("message", "")).strip()
     if not chat_id or not message:
         raise ValueError("'chat_id' and 'message' must be non-empty strings")
+
+    if "{{" in chat_id or "}}" in chat_id:
+        raise ValueError("'chat_id' contains unresolved amoCRM template; use {{lead.cf.<FIELD_ID>}} in Salesbot")
+
+    if not re.fullmatch(r"[a-z0-9]{8,64}", chat_id):
+        raise ValueError("'chat_id' must look like a Mattermost channel ID (lowercase letters/digits)")
+
     return chat_id, message
 
 
