@@ -31,16 +31,22 @@ class Handler(BaseHTTPRequestHandler):
 
         settings = Settings.from_env()
         query = parse_qs(parsed.query)
-        api_key = self.headers.get("X-Api-Key", "") or query.get("api_key", [""])[0]
-        if api_key != settings.app_api_key:
-            self._send_json(401, {"status": "fail", "error": "Invalid API key"})
-            return
 
         try:
             content_length = int(self.headers.get("Content-Length", "0"))
             raw_body = self.rfile.read(content_length)
             content_type = self.headers.get("Content-Type", "")
             payload = self._parse_payload(raw_body, content_type, query)
+
+            api_key = (
+                self.headers.get("X-Api-Key", "")
+                or query.get("api_key", [""])[0]
+                or str(payload.get("api_key", ""))
+            ).strip().strip('"\'')
+            if api_key != settings.app_api_key:
+                self._send_json(401, {"status": "fail", "error": "Invalid API key"})
+                return
+
             chat_id, message = validate_payload(payload)
             post_id = post_to_mattermost(settings, chat_id, message)
         except ValueError as exc:
