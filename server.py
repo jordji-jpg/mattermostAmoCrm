@@ -1,4 +1,5 @@
 import json
+import re
 import socket
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
@@ -41,6 +42,9 @@ class Handler(BaseHTTPRequestHandler):
             raw_body = self.rfile.read(content_length)
             content_type = self.headers.get("Content-Type", "")
             payload = self._parse_payload(raw_body, content_type, query)
+
+            payload["chat_id"] = self._resolve_templates(str(payload.get("chat_id", "")), payload)
+            payload["message"] = self._resolve_templates(str(payload.get("message", "")), payload)
 
             api_key = (
                 self.headers.get("X-Api-Key", "")
@@ -104,7 +108,38 @@ class Handler(BaseHTTPRequestHandler):
 
         return extracted
 
-    def _parse_payload(self, raw_body: bytes, content_type: str, query: dict[str, list[str]]) -> dict[str, str]:
+    @staticmethod
+    def _resolve_templates(value: str, payload: dict[str, object]) -> str:
+        if not value:
+            return value
+
+        def _lookup_token(token: str) -> str | None:
+            token = token.strip()
+            candidates = [token]
+            token_cf_dot = re.match(r"^(lead|contact)\.cf\.(\d+)$", token)
+            token_cf_us = re.match(r"^(lead|contact)\.cf_(\d+)$", token)
+            if token_cf_dot:
+                entity, field_id = token_cf_dot.groups()
+                candidates.extend([f"{entity}.cf_{field_id}", field_id])
+            elif token_cf_us:
+                entity, field_id = token_cf_us.groups()
+                candidates.extend([f"{entity}.cf.{field_id}", field_id])
+
+            for candidate in candidates:
+                found = Handler._pick_first_non_empty(payload, candidate)
+                if found is not None:
+                    return found
+            return None
+
+        def _replace_match(match: re.Match[str]) -> str:
+            token_value = _lookup_token(match.group(1))
+            return token_value if token_value is not None else match.group(0)
+
+        value = re.sub(r"\{\{\s*([^{}]+?)\s*\}\}", _replace_match, value)
+        value = re.sub(r"\[\[\s*([^\[\]]+?)\s*\]\]", _replace_match, value)
+        return value
+
+    def _parse_payload(self, raw_body: bytes, content_type: str, query: dict[str, list[str]]) -> dict[str, object]:
         body_text = raw_body.decode("utf-8") if raw_body else ""
 
         if "application/json" in content_type:
@@ -126,7 +161,8 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(payload, dict):
             payload = {"data": payload}
 
-        payload = self._extract_nested_payload(payload)
+        extracted = self._extract_nested_payload(payload)
+        payload = {**payload, **extracted}
 
         if "chat_id" not in payload and "chat_id" in query:
             payload["chat_id"] = query["chat_id"][0]
