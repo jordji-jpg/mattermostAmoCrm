@@ -29,6 +29,7 @@ class Settings:
 def validate_payload(payload: dict) -> tuple[str, str]:
     chat_id = str(payload.get("chat_id", "")).strip()
     message = str(payload.get("message", "")).strip()
+    message = message.replace("\\r\\n", "\n").replace("\\n", "\n")
     if not chat_id or not message:
         raise ValueError("'chat_id' and 'message' must be non-empty strings")
 
