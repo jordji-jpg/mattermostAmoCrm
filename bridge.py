@@ -32,6 +32,11 @@ def validate_payload(payload: dict) -> tuple[str, str]:
     if not chat_id or not message:
         raise ValueError("'chat_id' and 'message' must be non-empty strings")
 
+    if ":" in chat_id:
+        maybe_chat_id = chat_id.split(":", 1)[1].strip()
+        if re.fullmatch(r"[a-z0-9]{8,64}", maybe_chat_id):
+            chat_id = maybe_chat_id
+
     if any(token in chat_id for token in ("{{", "}}", "[[", "]]")):
         raise ValueError("'chat_id' contains unresolved amoCRM template; provide resolved channel id value")
 
