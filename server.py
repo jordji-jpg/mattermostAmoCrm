@@ -4,11 +4,17 @@ import socket
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
-from bridge import Settings, post_to_mattermost, validate_payload
+from bridge import Settings, continue_salesbot_step, post_to_mattermost, validate_payload
 
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "AmoMmBridge/1.0"
+
+    @staticmethod
+    def _is_resolved_value(value: str) -> bool:
+        if not value:
+            return False
+        return "{{" not in value and "}}" not in value and "[[" not in value and "]]" not in value
 
     def _send_json(self, code: int, body: dict) -> None:
         payload = json.dumps(body).encode("utf-8")
@@ -57,6 +63,12 @@ class Handler(BaseHTTPRequestHandler):
 
             chat_id, message = validate_payload(payload)
             post_id = post_to_mattermost(settings, chat_id, message)
+
+            bot_id = str(payload.get("bot_id", "")).strip()
+            continue_id = str(payload.get("continue_id", "")).strip()
+            bot_type = str(payload.get("bot_type", "salesbot")).strip() or "salesbot"
+            if self._is_resolved_value(bot_id) and self._is_resolved_value(continue_id):
+                continue_salesbot_step(settings, bot_id=bot_id, continue_id=continue_id, bot_type=bot_type)
         except ValueError as exc:
             self._send_json(200, {"status": "fail", "error": str(exc)})
             return
@@ -97,7 +109,7 @@ class Handler(BaseHTTPRequestHandler):
     def _extract_nested_payload(payload: dict) -> dict[str, str]:
         extracted: dict[str, str] = {}
 
-        for key in ("chat_id", "message", "api_key"):
+        for key in ("chat_id", "message", "api_key", "bot_id", "continue_id", "bot_type"):
             bracket_key = f"data[{key}]"
             if bracket_key in payload and payload[bracket_key] not in (None, ""):
                 extracted[key] = str(payload[bracket_key])
@@ -170,6 +182,12 @@ class Handler(BaseHTTPRequestHandler):
             payload["message"] = query["message"][0]
         if "api_key" not in payload and "api_key" in query:
             payload["api_key"] = query["api_key"][0]
+        if "bot_id" not in payload and "bot_id" in query:
+            payload["bot_id"] = query["bot_id"][0]
+        if "continue_id" not in payload and "continue_id" in query:
+            payload["continue_id"] = query["continue_id"][0]
+        if "bot_type" not in payload and "bot_type" in query:
+            payload["bot_type"] = query["bot_type"][0]
 
         return payload
 
