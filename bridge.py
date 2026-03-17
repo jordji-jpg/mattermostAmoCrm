@@ -14,6 +14,8 @@ class Settings:
     mattermost_bot_token: str
     request_timeout_seconds: float
     retry_attempts: int
+    amocrm_base_url: str
+    amocrm_access_token: str
 
     @staticmethod
     def from_env() -> "Settings":
@@ -23,6 +25,8 @@ class Settings:
             mattermost_bot_token=os.environ["MATTERMOST_BOT_TOKEN"],
             request_timeout_seconds=float(os.getenv("REQUEST_TIMEOUT_SECONDS", "5")),
             retry_attempts=int(os.getenv("RETRY_ATTEMPTS", "3")),
+            amocrm_base_url=os.getenv("AMOCRM_BASE_URL", "").rstrip("/"),
+            amocrm_access_token=os.getenv("AMOCRM_ACCESS_TOKEN", ""),
         )
 
 
@@ -74,3 +78,30 @@ def post_to_mattermost(settings: Settings, chat_id: str, message: str) -> str:
             time.sleep(attempt * 0.5)
 
     raise RuntimeError("Unexpected retry flow exit")
+
+
+def continue_salesbot_step(
+    settings: Settings,
+    bot_id: str,
+    continue_id: str,
+    bot_type: str = "salesbot",
+) -> None:
+    if not settings.amocrm_base_url or not settings.amocrm_access_token:
+        return
+
+    if bot_type not in {"salesbot", "marketingbot"}:
+        bot_type = "salesbot"
+
+    url = f"{settings.amocrm_base_url}/api/v4/{bot_type}/{bot_id}/continue/{continue_id}"
+    request = urllib.request.Request(
+        url,
+        method="POST",
+        data=b"{}",
+        headers={
+            "Authorization": f"Bearer {settings.amocrm_access_token}",
+            "Content-Type": "application/json",
+        },
+    )
+
+    with urllib.request.urlopen(request, timeout=settings.request_timeout_seconds):
+        return
